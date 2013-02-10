@@ -2,7 +2,6 @@ import os
 import platform
 import posixpath
 import urllib2
-import functools
 from collections import namedtuple
 from contextlib import closing, contextmanager
 
