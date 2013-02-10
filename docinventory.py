@@ -1,5 +1,6 @@
 import os
 import platform
+import posixpath
 import urllib2
 import functools
 from collections import namedtuple
@@ -97,7 +98,7 @@ class DataStore(object):
     def open_shelf(self, shelf=None):
         import shelve
         mkdirp(os.path.dirname(self.shelf_path))
-        if shelf:
+        if shelf is not None:
             return donothing(shelf)
         else:
             # return shelve.open(self.gindex_path)
@@ -108,7 +109,6 @@ def read_inventory(fp, url):
     """
     Read Sphinx inventory file from URL.
     """
-    import posixpath
     from sphinx.ext import intersphinx
     join = posixpath.join
     line = fp.readline().rstrip().decode('utf-8')
@@ -128,11 +128,10 @@ class DocInventory(object):
     def __init__(self, **kwds):
         self.ds = DataStore(**kwds)
 
-    def download(self, url, shelf=None):
-        with closing(urllib2.urlopen(url)) as fp:
+    def download(self, url):
+        invurl = posixpath.join(url, 'objects.inv')
+        with closing(urllib2.urlopen(invurl)) as fp:
             invdata = read_inventory(fp, url)
-        with self.ds.open_shelf(shelf) as shelf:
-            shelf[url] = invdata
         return invdata
 
     @return_as(set)
@@ -142,9 +141,10 @@ class DocInventory(object):
                 yield name
 
     def add_url(self, url, shelf=None):
+        url = posixpath.join(url, '')  # normalize
         with self.ds.open_shelf(shelf) as shelf:
             if url not in shelf:
-                invdata = self.download(url, shelf=shelf)
+                shelf[url] = invdata = self.download(url)
                 global_index = shelf.get('global_index', {})
                 for name in self.inventory_names(invdata):
                     global_index.setdefault(name, set()).add(url)
