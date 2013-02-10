@@ -136,8 +136,8 @@ class DocInventory(object):
 
     @return_as(set)
     def inventory_names(self, invdata):
-        for dct in invdata.values():
-            for name in dct:
+        for domain in invdata.values():
+            for name in domain:
                 yield name
 
     def add_url(self, url, shelf=None):
@@ -151,8 +151,8 @@ class DocInventory(object):
                 shelf['global_index'] = global_index
 
     def inventory_topics(self, invdata, name):
-        for (doctype, dct) in invdata.items():
-            match = dct.get(name)
+        for (doctype, domain) in invdata.items():
+            match = domain.get(name)
             if match:
                 yield Topic(doctype, *match)
 
