@@ -5,8 +5,7 @@ import urllib2
 import functools
 from collections import namedtuple
 from contextlib import closing
-
-from sphinx.ext import intersphinx
+import shelve
 
 
 ### Utility
@@ -115,10 +114,27 @@ class DataStore(object):
             base += ':' + port
         return urlparse.urljoin(base, path)
 
+    def local_inventory(self, url):
+        return closing(shelve.open(self.local_path(url)))
+
     def global_inventory(self):
-        import shelve
         # return shelve.open(self.gindex_path)
         return closing(shelve.open(self.gindex_path))
+
+
+def read_inventory(fp, url):
+    """
+    Read Sphinx inventory file from URL.
+    """
+    import posixpath
+    from sphinx.ext import intersphinx
+    join = posixpath.join
+    line = fp.readline().rstrip().decode('utf-8')
+    if line == '# Sphinx inventory version 1':
+        invdata = intersphinx.read_inventory_v1(fp, url, join)
+    elif line == '# Sphinx inventory version 2':
+        invdata = intersphinx.read_inventory_v2(fp, url, join)
+    return invdata
 
 
 Index = namedtuple('Index', ('url', 'local_path', 'names'))
@@ -139,28 +155,24 @@ class DocInventory(object):
     def download(self, url):
         path = self.ds.local_path(url)
         mkdirp(os.path.dirname(path))
-        with open(path, 'wb') as lf:
-            with closing(urllib2.urlopen(url)) as rf:
-                lf.write(rf.read())
-        return path
+        with closing(urllib2.urlopen(url)) as fp:
+            inv = read_inventory(fp, url)
+        with self.ds.local_inventory(url) as linv:
+            linv['inventory'] = inv
+            linv['url'] = url
+            linv['path'] = path
+        return (path, inv)
+
+    def get_inventory(self, url):
+        with self.ds.local_inventory(url) as linv:
+            return linv['inventory']
 
     def cached_inventory(self, path, url):
         try:
             inv = self._inventory_cache[path]
         except KeyError:
-            inv = self._inventory_cache[path] = self.read_inventory(path, url)
+            inv = self._inventory_cache[path] = self.get_inventory(url)
         return inv
-
-    def read_inventory(self, path, url):
-        import posixpath
-        join = posixpath.join
-        with open(path, 'rb') as lf:
-            line = lf.readline().rstrip().decode('utf-8')
-            if line == '# Sphinx inventory version 1':
-                invdata = intersphinx.read_inventory_v1(lf, url, join)
-            elif line == '# Sphinx inventory version 2':
-                invdata = intersphinx.read_inventory_v2(lf, url, join)
-        return invdata
 
     @return_as(set)
     def inventory_names(self, invdata):
@@ -170,8 +182,8 @@ class DocInventory(object):
 
     def add_url(self, url):
         if not self.is_cached(url):
-            path = self.download(url)
-            names = self.inventory_names(self.read_inventory(path, url))
+            (path, inv) = self.download(url)
+            names = self.inventory_names(inv)
             with self.ds.global_inventory() as ginv:
                 ginv[url] = Index(url, path, names)
 
