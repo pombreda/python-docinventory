@@ -1,11 +1,9 @@
 import os
 import platform
-import urlparse
 import urllib2
 import functools
 from collections import namedtuple
-from contextlib import closing
-import shelve
+from contextlib import closing, contextmanager
 
 
 ### Utility
@@ -77,6 +75,11 @@ def return_as(converter):
     return wrapper
 
 
+@contextmanager
+def donothing(thing):
+    yield thing
+
+
 ### Data store
 
 class DataStore(object):
@@ -89,37 +92,16 @@ class DataStore(object):
         Root directory for any DocInventory related data files.
         """
 
-        self.cache_path = os.path.join(self.base_path, 'cache')
-        self.gindex_path = os.path.join(self.base_path, 'gindex')
+        self.shelf_path = os.path.join(self.base_path, 'shelf')
 
-    _scheme_port_map = {
-        'http': 80,
-        'https': 443,
-    }
-
-    _port_scheme_map = dict((v, k) for (k, v) in _scheme_port_map.items())
-
-    def local_path(self, url):
-        result = urlparse.urlparse(url)
-        port = result.port or self._scheme_port_map[result.scheme]
-        return os.path.join(self.cache_path,
-                            result.scheme, result.netloc, str(port),
-                            *result.path.split('/'))
-
-    def url(self, local_path):
-        relpath = os.path.relpath(self.base_path, local_path)
-        (scheme, domain, port, path) = relpath.split(os.path.sep, 3)
-        base = '{0}://{1}'.format(scheme, domain)
-        if int(port) not in self._port_scheme_map:
-            base += ':' + port
-        return urlparse.urljoin(base, path)
-
-    def local_inventory(self, url):
-        return closing(shelve.open(self.local_path(url)))
-
-    def global_inventory(self):
-        # return shelve.open(self.gindex_path)
-        return closing(shelve.open(self.gindex_path))
+    def open_shelf(self, shelf=None):
+        import shelve
+        mkdirp(os.path.dirname(self.shelf_path))
+        if shelf:
+            return donothing(shelf)
+        else:
+            # return shelve.open(self.gindex_path)
+            return closing(shelve.open(self.shelf_path))
 
 
 def read_inventory(fp, url):
@@ -137,8 +119,6 @@ def read_inventory(fp, url):
     return invdata
 
 
-Index = namedtuple('Index', ('url', 'local_path', 'names'))
-Document = namedtuple('Document', ('url', 'local_path'))
 Topic = namedtuple(
     'Topic', ('type', 'project', 'version', 'location', 'display'))
 
@@ -147,32 +127,13 @@ class DocInventory(object):
 
     def __init__(self, **kwds):
         self.ds = DataStore(**kwds)
-        self._inventory_cache = {}
 
-    def is_cached(self, url):
-        return os.path.exists(self.ds.local_path(url))
-
-    def download(self, url):
-        path = self.ds.local_path(url)
-        mkdirp(os.path.dirname(path))
+    def download(self, url, shelf=None):
         with closing(urllib2.urlopen(url)) as fp:
-            inv = read_inventory(fp, url)
-        with self.ds.local_inventory(url) as linv:
-            linv['inventory'] = inv
-            linv['url'] = url
-            linv['path'] = path
-        return (path, inv)
-
-    def get_inventory(self, url):
-        with self.ds.local_inventory(url) as linv:
-            return linv['inventory']
-
-    def cached_inventory(self, path, url):
-        try:
-            inv = self._inventory_cache[path]
-        except KeyError:
-            inv = self._inventory_cache[path] = self.get_inventory(url)
-        return inv
+            invdata = read_inventory(fp, url)
+        with self.ds.open_shelf(shelf) as shelf:
+            shelf[url] = invdata
+        return invdata
 
     @return_as(set)
     def inventory_names(self, invdata):
@@ -180,33 +141,26 @@ class DocInventory(object):
             for name in dct:
                 yield name
 
-    def add_url(self, url):
-        if not self.is_cached(url):
-            (path, inv) = self.download(url)
-            names = self.inventory_names(inv)
-            with self.ds.global_inventory() as ginv:
-                ginv[url] = Index(url, path, names)
+    def add_url(self, url, shelf=None):
+        with self.ds.open_shelf(shelf) as shelf:
+            if url not in shelf:
+                invdata = self.download(url, shelf=shelf)
+                global_index = shelf.get('global_index', {})
+                for name in self.inventory_names(invdata):
+                    global_index.setdefault(name, set()).add(url)
+                shelf['global_index'] = global_index
 
-    _global_index = None
+    def inventory_topics(self, invdata, name):
+        for (doctype, dct) in invdata.items():
+            match = dct.get(name)
+            if match:
+                yield Topic(doctype, *match)
 
-    def global_index(self):
-        if self._global_index:
-            return self._global_index
-        self._global_index = global_index = {}  # name => [Document]
-        with self.ds.global_inventory() as ginv:
-            for index in ginv.values():
-                for name in index.names:
-                    doc = Document(*index[:2])
-                    global_index.setdefault(name, []).append(doc)
-        return global_index
-
-    def lookup(self, name):
-        for (url, local_path) in self.global_index().get(name, []):
-            inv = self.cached_inventory(local_path, url)
-            for (doctype, dct) in inv.items():
-                match = dct.get(name)
-                if match:
-                    yield Topic(doctype, *match)
+    def lookup(self, name, shelf=None):
+        with self.ds.open_shelf(shelf) as shelf:
+            for url in shelf.get('global_index', {}).get(name):
+                for topic in self.inventory_topics(shelf[url], name):
+                    yield topic
 
 
 def run_add(url):
