@@ -125,7 +125,8 @@ class DataStore(object):
 
 Index = namedtuple('Index', ('url', 'local_path', 'names'))
 Document = namedtuple('Document', ('url', 'local_path'))
-Topic = namedtuple('Topic', ('project', 'version', 'location', 'display'))
+Topic = namedtuple(
+    'Topic', ('type', 'project', 'version', 'location', 'display'))
 
 
 class DocInventory(object):
@@ -192,10 +193,10 @@ class DocInventory(object):
     def lookup(self, name):
         for (url, local_path) in self.global_index().get(name, []):
             inv = self.cached_inventory(local_path, url)
-            for dct in inv.values():
+            for (doctype, dct) in inv.items():
                 match = dct.get(name)
                 if match:
-                    yield Topic(*match)
+                    yield Topic(doctype, *match)
 
 
 def run_add(url):
