@@ -35,47 +35,6 @@ def mkdirp(path):
         os.makedirs(path)
 
 
-def return_as(converter):
-    """
-    Decorator to convert result of a function.
-
-    It is just a function composition. The following two codes are
-    equivalent.
-
-    Using `@return_as`::
-
-        @return_as(converter)
-        def generator(args):
-            ...
-
-        result = generator(args)
-
-    Manually do the same::
-
-        def generator(args):
-            ...
-
-        result = converter(generator(args))
-
-    Example:
-
-    >>> @return_as(list)
-    ... def f():
-    ...     for i in range(3):
-    ...         yield i
-    ...
-    >>> f()  # this gives a list, not an iterator
-    [0, 1, 2]
-
-    """
-    def wrapper(generator):
-        @functools.wraps(generator)
-        def func(*args, **kwds):
-            return converter(generator(*args, **kwds))
-        return func
-    return wrapper
-
-
 @contextmanager
 def donothing(thing):
     yield thing
@@ -137,11 +96,11 @@ class DocInventory(object):
             invdata = read_inventory(fp, url)
         return invdata
 
-    @return_as(set)
     def inventory_names(self, invdata):
+        names = set()
         for domain in invdata.values():
-            for name in domain:
-                yield name
+            names.update(domain)
+        return names
 
     def add_url(self, url, shelf=None):
         url = posixpath.join(url, '')  # normalize
