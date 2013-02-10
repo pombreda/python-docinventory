@@ -125,6 +125,7 @@ class DataStore(object):
 
 Index = namedtuple('Index', ('url', 'local_path', 'names'))
 Document = namedtuple('Document', ('url', 'local_path'))
+Topic = namedtuple('Topic', ('project', 'version', 'location', 'display'))
 
 
 class DocInventory(object):
@@ -194,7 +195,7 @@ class DocInventory(object):
             for dct in inv.values():
                 match = dct.get(name)
                 if match:
-                    yield match[2]
+                    yield Topic(*match)
 
 
 def run_add(url):
@@ -204,15 +205,15 @@ def run_add(url):
 
 def run_list(name):
     docinv = DocInventory()
-    for url in docinv.lookup(name):
-        print(url)
+    for topic in docinv.lookup(name):
+        print(topic.location)
 
 
 def run_browse(name):
     import webbrowser
     docinv = DocInventory()
-    for url in docinv.lookup(name):
-        webbrowser.open(url)
+    for topic in docinv.lookup(name):
+        webbrowser.open(topic.location)
 
 
 def main(args=None):
