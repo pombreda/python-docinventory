@@ -240,7 +240,3 @@ def main(args=None):
     ns = parser.parse_args(args=args)
     applyargs = lambda func, **kwds: func(**kwds)
     applyargs(**vars(ns))
-
-
-if __name__ == '__main__':
-    main()
