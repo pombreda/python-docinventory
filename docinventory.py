@@ -95,14 +95,11 @@ class DataStore(object):
 
         self.shelf_path = os.path.join(self.base_path, 'shelf')
 
-    def open_shelf(self, shelf=None):
+    def open_shelf(self):
         import shelve
         mkdirp(os.path.dirname(self.shelf_path))
-        if shelf is not None:
-            return donothing(shelf)
-        else:
-            # return shelve.open(self.gindex_path)
-            return closing(shelve.open(self.shelf_path))
+        # return shelve.open(self.gindex_path)
+        return closing(shelve.open(self.shelf_path))
 
 
 def read_inventory(fp, url):
@@ -128,6 +125,12 @@ class DocInventory(object):
     def __init__(self, **kwds):
         self.ds = DataStore(**kwds)
 
+    def open_shelf(self, shelf=None):
+        if shelf is not None:
+            return donothing(shelf)
+        else:
+            return self.ds.open_shelf()
+
     def download(self, url):
         invurl = posixpath.join(url, 'objects.inv')
         with closing(urllib2.urlopen(invurl)) as fp:
@@ -142,7 +145,7 @@ class DocInventory(object):
 
     def add_url(self, url, shelf=None):
         url = posixpath.join(url, '')  # normalize
-        with self.ds.open_shelf(shelf) as shelf:
+        with self.open_shelf(shelf) as shelf:
             if url not in shelf:
                 shelf[url] = invdata = self.download(url)
                 global_index = shelf.get('global_index', {})
@@ -157,7 +160,7 @@ class DocInventory(object):
                 yield Topic(doctype, *match)
 
     def lookup(self, name, shelf=None):
-        with self.ds.open_shelf(shelf) as shelf:
+        with self.open_shelf(shelf) as shelf:
             for url in shelf.get('global_index', {}).get(name):
                 for topic in self.inventory_topics(shelf[url], name):
                     yield topic
